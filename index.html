@@ -536,7 +536,7 @@
         <div class="header">
             <div class="logo">LuxAuth AI</div>
             <div class="tagline">מערכת AI מתקדמת לאימות מוצרי יוקרה</div>
-            <div class="ai-badge">🤖 Demo Version</div>
+            <div class="ai-badge">🤖 Powered by GPT-4</div>
         </div>
 
         <!-- Main Card -->
@@ -707,69 +707,36 @@
             try {
                 const additionalInfo = document.getElementById('additionalInfo').value;
                 
-                // Call proxy service for OpenAI API
-                const response = await fetch('https://api.openai-proxy.com/v1/chat/completions', {
+                // Prepare data for Netlify function
+                const requestData = {
+                    images: uploadedImages.map(img => img.dataUrl),
+                    additionalInfo: additionalInfo,
+                    conversationHistory: conversationHistory
+                };
+
+                // Call Netlify function
+                const response = await fetch('/.netlify/functions/analyze', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': 'Bearer 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'
                     },
-                    body: JSON.stringify({
-                        model: "gpt-4-vision-preview",
-                        messages: [
-                            {
-                                role: "system",
-                                content: "אתה מומחה לזיהוי מוצרי יוקרה. נתח את התמונות והחזר: מסקנה: מקורי/מזויף/לא ברור, ואז הסבר מפורט."
-                            },
-                            {
-                                role: "user",
-                                content: [
-                                    {
-                                        type: "text",
-                                        text: additionalInfo || "נתח את התמונות ובדוק אם המוצר מקורי או מזויף"
-                                    },
-                                    ...uploadedImages.map(img => ({
-                                        type: "image_url",
-                                        image_url: { url: img.dataUrl }
-                                    }))
-                                ]
-                            }
-                        ],
-                        max_tokens: 1000
-                    })
+                    body: JSON.stringify(requestData)
                 });
 
-                if (!response.ok) {
-                    throw new Error('שגיאה בחיבור לשירות');
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'שגיאה לא ידועה');
                 }
 
-                const data = await response.json();
-                const result = data.choices[0].message.content;
+                // Update conversation history
+                conversationHistory = data.conversationHistory || [];
 
-                displayResults(result);
+                displayResults(data.result);
 
             } catch (error) {
                 console.error('Error:', error);
-                
-                // Demo response for testing
-                const demoResult = `מסקנה: לא ברור
-
-בגרסת ההדגמה זו, אני לא יכול לבצע ניתוח אמיתי של התמונות מכיוון שזה דורש חיבור לשירותי AI.
-
-**למה זה קורה?**
-- זו גרסת הדגמה ללא חיבור אמיתי לשירותי OpenAI
-- בגרסה המלאה יהיה ניתוח מקצועי מלא
-
-**מה כולל הניתוח האמיתי?**
-✓ בדיקת איכות חומרים ועבודה
-✓ ניתוח דיוק הלוגו והכיתוב  
-✓ זיהוי סימנים המעידים על זיוף
-✓ הערכת פרטים טכניים וגימור
-✓ המלצות והסברים מפורטים
-
-**האתר מוכן לפרסום** - רק צריך להוסיף את החיבור לשירותי AI!`;
-                
-                displayResults(demoResult);
+                showError(`שגיאה בחיבור לשירות AI: ${error.message}`);
             } finally {
                 analyzeBtn.disabled = false;
             }
