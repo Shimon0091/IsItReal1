@@ -1,0 +1,11 @@
+[build]
+  functions = "netlify/functions"
+
+[functions]
+  # Set the runtime for the functions
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
