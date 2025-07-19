@@ -1,15 +1,11 @@
-// analyze.js
-
-const fetch = require('node-fetch');
-
-const headers = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Content-Type': 'application/json'
-};
-
 exports.handler = async (event, context) => {
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Content-Type': 'application/json',
+  };
+
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers, body: '' };
   }
@@ -18,18 +14,18 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 405,
       headers,
-      body: JSON.stringify({ error: 'Method not allowed' })
+      body: JSON.stringify({ error: 'Method not allowed' }),
     };
   }
 
   try {
-    const { images, productInfo, conversationHistory } = JSON.parse(event.body || '{}');
+    const { images, additionalInfo, conversationHistory } = JSON.parse(event.body);
 
-    if (!images || images.length === 0 || !productInfo) {
+    if (!images || images.length === 0) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: 'נא להעלות תמונה ולציין פרטי מוצר' })
+        body: JSON.stringify({ error: 'נא להעלות לפחות תמונה אחת' }),
       };
     }
 
@@ -38,50 +34,71 @@ exports.handler = async (event, context) => {
       return {
         statusCode: 500,
         headers,
-        body: JSON.stringify({ error: 'מפתח API לא מוגדר' })
+        body: JSON.stringify({ error: 'מפתח API לא מוגדר' }),
       };
     }
 
     const messages = [
       {
         role: 'system',
-        content: `אתה מאמת מומחה למוצרי יוקרה. עבודתך היא לנתח תמונות ולזהות זיופים מתוחכמים.
+        content: `You are a luxury product authenticator. Your job is to analyze photos of suspected counterfeit products and determine their authenticity.
 
-🔍 התייחס לכל מוצר כאל חשוד עד שיוכח אחרת.
+🚨 Treat each product as suspicious by default. Assume it is fake unless strong visual evidence proves otherwise.
 
-🧠 הנחיות:
-- קטגוריה: ${productInfo.category || 'לא צוין'}
-- מותג: ${productInfo.brand || 'לא צוין'}
-- דגם: ${productInfo.model || 'לא צוין'}
+🔎 Actively look for flaws: inconsistent fonts, misaligned elements, cheap finishes, bad proportions, wrong logos, poor materials, etc.
 
-- לעולם אל תצהיר שמוצר הוא מקורי אלא אם רואים לפחות 3 סימנים מובהקים: לוגו מדויק, סידורי, גימור, מנגנון.
-- אם יש חוסר פרטים – דרג ביטחון מתחת ל־70%.
-- נתח לפי קטגוריה (שעון: בזל, מחוגים, כתרים / תיק: תפירה, לוגו, רוכסן וכו')
-- חפש: הדפס לא מדויק, יישור שגוי, גימור זול, פרופורציות לא טובות.
+🧠 Instructions:
+- Identify the category: watch, bag, sneaker, etc.
+- Identify brand and model (if possible).
+- Use specific, category-based criteria (see below).
+- If critical parts (e.g., serial number, back case) are missing, lower confidence drastically.
+- Never say "authentic" unless there are multiple clear positive signs.
 
-📄 תשובה בעברית בלבד, בפורמט:
+🛑 If no flaws are visible, say: "לא נמצאו סימנים מובהקים לזיוף, אך לא ניתן לאשר מקוריות מלאה."
+
+✅ Categories:
+WATCHES: dial layout, hands, fonts, crown, cyclops magnification, bezel alignment, caseback, serial number
+BAGS: stitching, logo embossing, leather quality, interior lining, hardware codes
+SNEAKERS: logo accuracy, sole patterns, stitching quality, font weight on tags
+JEWELRY: engravings, clasp mechanism, polish, weight, symmetry
+
+📄 Respond in Hebrew using this format:
 מסקנה: מקורי / מזויף / לא ברור
-קטגוריה: 
-מותג ודגם: 
+קטגוריה: [שעון / נעליים / תיק וכו']
+מותג ודגם: [אם ניתן]
 רמת ביטחון: XX%
-סיכום קצר: 3–5 משפטים.`
+סיכום קצר: עד 3–5 משפטים בהירים, חדים ומבוססי ניתוח
+
+📏 כל תגובה חייבת להיות החלטית. לא "נראה טוב" אלא מה כן ומה חסר.`
       }
     ];
 
-    if (conversationHistory && Array.isArray(conversationHistory)) {
+    if (conversationHistory && conversationHistory.length > 0) {
       messages.push(...conversationHistory);
     }
 
     const currentMessage = {
       role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: 'בדוק את התמונות המצורפות כאילו מדובר בזיוף מתוחכם. נתח לפי הקטגוריה הרלוונטית.'
-        },
-        ...images.map(img => ({ type: 'image_url', image_url: { url: img } }))
-      ]
+      content: []
     };
+
+    let textPrompt = 'בדוק את התמונות המצורפות כאילו מדובר בזיוף מתוחכם. חפש פגמים, עיוותים, תקלות וחוסר התאמה לפרטים המקוריים. התייחס לכל פריט כאל חשוד עד שיוכח אחרת. דווח על רמת ביטחון קצרה וברורה.';
+
+    if (additionalInfo && additionalInfo.trim()) {
+      textPrompt += ` מידע נוסף שסופק: ${additionalInfo}`;
+    }
+
+    currentMessage.content.push({
+      type: 'text',
+      text: textPrompt
+    });
+
+    images.forEach(imageDataUrl => {
+      currentMessage.content.push({
+        type: 'image_url',
+        image_url: { url: imageDataUrl }
+      });
+    });
 
     messages.push(currentMessage);
 
@@ -89,7 +106,7 @@ exports.handler = async (event, context) => {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         model: 'gpt-4o',
@@ -100,33 +117,34 @@ exports.handler = async (event, context) => {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('OpenAI Error:', response.status, errorText);
+      const errorData = await response.text();
+      console.error('OpenAI API Error:', response.status, errorData);
       return {
         statusCode: 500,
         headers,
-        body: JSON.stringify({ error: 'שגיאה מהשרת החכם', details: errorText })
+        body: JSON.stringify({ error: `שגיאה בשירות AI: ${response.status}`, details: errorData }),
       };
     }
 
     const data = await response.json();
-    const result = data.choices[0]?.message?.content || 'לא התקבלה תשובה';
+    const result = data.choices[0].message.content;
 
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
         success: true,
-        result,
+        result: result,
         conversationHistory: [...(conversationHistory || []), currentMessage, { role: 'assistant', content: result }]
-      })
+      }),
     };
+
   } catch (error) {
     console.error('Function Error:', error);
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ error: 'שגיאה בעיבוד הבקשה', details: error.message })
+      body: JSON.stringify({ error: 'שגיאה בעיבוד הבקשה', details: error.message }),
     };
   }
 };
