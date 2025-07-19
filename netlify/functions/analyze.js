@@ -47,44 +47,48 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // Prepare messages for OpenAI with the NEW improved prompt
+    // Prepare messages for OpenAI with improved universal prompt
     const messages = [
       {
         role: "system",
-        content: `You are an expert luxury watch authenticator with 20+ years of experience. You've worked at Christie's, Sotheby's, and authenticated thousands of pieces for insurance companies.
+        content: `You are a professional luxury product authenticator with 20+ years of experience working at Christie's, Sotheby's, and major authentication companies. You specialize in ALL luxury categories:
 
-CRITICAL INSTRUCTIONS:
-1. Look at EVERY detail in the image(s) - examine closely for specific flaws
-2. Compare against your knowledge of authentic examples of this exact model
-3. Be DECISIVE - don't hedge with "insufficient information" unless truly impossible to assess
-4. Give SPECIFIC technical observations, not generic statements
-5. Look for RED FLAGS that indicate fakes
+**WATCHES**: Rolex, Omega, Patek Philippe, Audemars Piguet, Hublot, TAG Heuer, Breitling, Cartier
+**HANDBAGS**: Louis Vuitton, Chanel, Hermès, Gucci, Prada, Dior, Bottega Veneta, YSL
+**SNEAKERS**: Nike, Adidas, Jordan, Yeezy, Off-White, Supreme collaborations
+**SUNGLASSES**: Ray-Ban, Oakley, Gucci, Prada, Tom Ford
+**JEWELRY**: Tiffany & Co., Cartier, Bulgari, Van Cleef & Arpels
+**CLOTHING**: Supreme, Off-White, Balenciaga, fear of god, Stone Island
 
-For each watch, analyze these specific elements:
-- **Dial details**: Font thickness, spacing, printing quality, lume dots alignment
-- **Hands**: Shape, finishing, length proportions specific to this model  
-- **Bezel**: Alignment, click precision, engraving depth and sharpness
-- **Case**: Proportions, brushing/polishing patterns, crown guards shape
-- **Bracelet/Strap**: Link construction, clasp mechanism, end link fit
-- **Crown**: Size, logo engraving, threading visibility
-- **Cyclops lens**: Magnification level (should be 2.5x for Rolex), alignment
-- **Serial/model numbers**: Font, depth, positioning
-- **Movement**: If visible, check for correct rotor design and finishing
+CRITICAL AUTHENTICATION APPROACH:
+1. **IDENTIFY CATEGORY FIRST** - What type of product is this?
+2. **BRAND & MODEL IDENTIFICATION** - Be specific with exact model names/numbers
+3. **CATEGORY-SPECIFIC ANALYSIS** - Use appropriate authentication criteria:
 
-BRAND-SPECIFIC RED FLAGS TO CHECK:
-**Rolex**: Wonky hour markers, thin fonts, poorly aligned rehaut, weak crown logo, incorrect date font
-**Omega**: Misaligned subdials, wrong hand shapes, poor applied logo, incorrect movement
-**Hublot**: Cheap rubber strap, misaligned screws, poor bezel finishing, wrong pushers
+**FOR WATCHES**: Dial details, hand shapes, bezel alignment, crown logo, cyclops magnification, rehaut engraving, bracelet end links, clasp mechanism, case proportions, movement visibility
 
-DO NOT give generic answers like "hard to assess from photo" - USE YOUR EXPERTISE to spot issues.
+**FOR HANDBAGS**: Stitching patterns, material quality, logo placement/embossing, hardware finish, date codes/serial numbers, dust bag quality, authenticity cards, zipper quality
+
+**FOR SNEAKERS**: Stitching quality, sole patterns, tongue tags, size labels, colorway accuracy, boost/air bubble quality, box labels, StockX tags
+
+**FOR SUNGLASSES**: Lens clarity, frame flexibility, logo etching, temple markings, case quality, cleaning cloth, authenticity cards
+
+**FOR JEWELRY**: Hallmarks, clasp mechanisms, stone setting quality, weight feel, packaging
+
+BE DECISIVE AND SPECIFIC:
+- Don't give generic "hard to tell from photo" responses
+- Point out specific flaws you observe
+- Compare to authentic examples you know
+- Give confident assessments based on visible evidence
 
 Answer format in Hebrew:
 מסקנה: [מקורי/מזויף/לא ברור]
-מותג ודגם: [Be very specific with reference number if possible]
+קטגוריה: [שעון/תיק/נעליים/משקפיים/תכשיט/בגד/אחר]
+מותג ודגם: [Be very specific - include model numbers if possible]
 רמת ביטחון: X%
-ניתוח טכני מפורט: [Point out specific technical details you observed]
-סימני אזהרה: [Any red flags you spotted, be specific]
-המלצות: [Only if genuinely needed]`
+ניתוח טכני מפורט: [Specific observations relevant to this category]
+סימני אזהרה: [Any red flags you spotted]
+המלצות: [Only if additional verification needed]`
       }
     ];
 
@@ -93,17 +97,31 @@ Answer format in Hebrew:
       messages.push(...conversationHistory);
     }
 
-    // Prepare current message with more specific instructions
+    // Prepare current message with category-specific analysis
     const currentMessage = {
       role: "user",
       content: []
     };
 
-    // Add more specific text prompt
-    let textPrompt = "Analyze this luxury watch for authenticity. Look closely at all visible details - dial, hands, case, bracelet, crown, any text/engravings. Compare against authentic examples of this specific model. Be decisive and point out any specific flaws or concerning details you see.";
+    // Create dynamic prompt based on any category hints in additional info
+    let textPrompt = "Analyze this luxury product for authenticity. First identify the category and brand, then perform detailed authentication analysis using category-specific criteria.";
     
     if (additionalInfo && additionalInfo.trim()) {
-      textPrompt += ` Additional context: ${additionalInfo}`;
+      const info = additionalInfo.toLowerCase();
+      
+      if (info.includes('שעון') || info.includes('watch') || info.includes('rolex') || info.includes('omega') || info.includes('hublot')) {
+        textPrompt += " FOCUS: This appears to be a watch. Examine dial details, hands, bezel, crown, bracelet, case proportions, and any visible movement parts.";
+      } else if (info.includes('תיק') || info.includes('bag') || info.includes('louis vuitton') || info.includes('chanel') || info.includes('hermes')) {
+        textPrompt += " FOCUS: This appears to be a handbag. Examine stitching patterns, material quality, logo embossing, hardware finish, and any date codes.";
+      } else if (info.includes('נעל') || info.includes('sneaker') || info.includes('nike') || info.includes('adidas') || info.includes('jordan')) {
+        textPrompt += " FOCUS: These appear to be sneakers. Examine stitching quality, sole patterns, tags, labels, colorway accuracy, and overall construction.";
+      } else if (info.includes('משקף') || info.includes('sunglasses') || info.includes('ray-ban') || info.includes('oakley')) {
+        textPrompt += " FOCUS: These appear to be sunglasses. Examine lens quality, frame construction, logo etching, and temple markings.";
+      } else if (info.includes('תכשיט') || info.includes('jewelry') || info.includes('tiffany') || info.includes('cartier')) {
+        textPrompt += " FOCUS: This appears to be jewelry. Examine hallmarks, clasp quality, stone settings, and overall craftsmanship.";
+      }
+      
+      textPrompt += ` Additional context provided: ${additionalInfo}`;
     }
 
     currentMessage.content.push({
