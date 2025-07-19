@@ -1,5 +1,4 @@
 exports.handler = async (event, context) => {
-  // Allow CORS
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
@@ -7,16 +6,10 @@ exports.handler = async (event, context) => {
     'Content-Type': 'application/json',
   };
 
-  // Handle preflight requests
   if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers,
-      body: '',
-    };
+    return { statusCode: 200, headers, body: '' };
   }
 
-  // Only allow POST requests
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
@@ -36,9 +29,7 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // Get API key from environment variable
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-    
     if (!OPENAI_API_KEY) {
       return {
         statusCode: 500,
@@ -47,101 +38,70 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // Prepare messages for OpenAI with improved universal prompt
     const messages = [
       {
-        role: "system",
-        content: `You are a professional luxury product authenticator with 20+ years of experience working at Christie's, Sotheby's, and major authentication companies. You specialize in ALL luxury categories:
+        role: 'system',
+        content: `You are a professional luxury product authenticator with 20+ years of experience. You specialize in luxury watches, handbags, sneakers, jewelry, clothing, and more.
 
-**WATCHES**: Rolex, Omega, Patek Philippe, Audemars Piguet, Hublot, TAG Heuer, Breitling, Cartier
-**HANDBAGS**: Louis Vuitton, Chanel, Hermès, Gucci, Prada, Dior, Bottega Veneta, YSL
-**SNEAKERS**: Nike, Adidas, Jordan, Yeezy, Off-White, Supreme collaborations
-**SUNGLASSES**: Ray-Ban, Oakley, Gucci, Prada, Tom Ford
-**JEWELRY**: Tiffany & Co., Cartier, Bulgari, Van Cleef & Arpels
-**CLOTHING**: Supreme, Off-White, Balenciaga, fear of god, Stone Island
+Instructions:
+- Identify the product category first (watch, bag, sneaker, etc).
+- Then identify brand and model if possible.
+- Then authenticate using category-specific criteria (see below).
 
-CRITICAL AUTHENTICATION APPROACH:
-1. **IDENTIFY CATEGORY FIRST** - What type of product is this?
-2. **BRAND & MODEL IDENTIFICATION** - Be specific with exact model names/numbers
-3. **CATEGORY-SPECIFIC ANALYSIS** - Use appropriate authentication criteria:
+Category criteria:
+**WATCHES**: dial layout, font, crown, cyclops magnification, bezel, bracelet, case shape, movement markers
+**HANDBAGS**: stitching, logo placement, leather quality, hardware, date codes, embossing
+**SNEAKERS**: stitching, colorway, sole pattern, tag fonts, air/boost quality
+**JEWELRY**: engravings, clasp, stone setting, polish, symmetry
+**SUNGLASSES**: logo etching, frame weight, hinges, lens clarity
 
-**FOR WATCHES**: Dial details, hand shapes, bezel alignment, crown logo, cyclops magnification, rehaut engraving, bracelet end links, clasp mechanism, case proportions, movement visibility
+⚠️ Response guidelines:
+- Be ASSERTIVE. Don't hedge with "possibly"
+- No more than 5 clear bullet points
+- Always give a confidence level
+- Use short sentences. Avoid filler like "difficult to determine"
+- Only say "insufficient" if image is blurry or critical part is missing
 
-**FOR HANDBAGS**: Stitching patterns, material quality, logo placement/embossing, hardware finish, date codes/serial numbers, dust bag quality, authenticity cards, zipper quality
+📄 Response format (in Hebrew):
+מסקנה: [מקורי / מזויף / לא ברור]
+קטגוריה: [שעון / תיק / נעליים / תכשיט / משקפיים / אחר]
+מותג ודגם: [דגם מדויק במידת האפשר]
+רמת ביטחון: XX%
+סיכום קצר: [משפט או שניים בלבד עם הסבר ברור]
 
-**FOR SNEAKERS**: Stitching quality, sole patterns, tongue tags, size labels, colorway accuracy, boost/air bubble quality, box labels, StockX tags
-
-**FOR SUNGLASSES**: Lens clarity, frame flexibility, logo etching, temple markings, case quality, cleaning cloth, authenticity cards
-
-**FOR JEWELRY**: Hallmarks, clasp mechanisms, stone setting quality, weight feel, packaging
-
-BE DECISIVE AND SPECIFIC:
-- Don't give generic "hard to tell from photo" responses
-- Point out specific flaws you observe
-- Compare to authentic examples you know
-- Give confident assessments based on visible evidence
-
-Answer format in Hebrew:
-מסקנה: [מקורי/מזויף/לא ברור]
-קטגוריה: [שעון/תיק/נעליים/משקפיים/תכשיט/בגד/אחר]
-מותג ודגם: [Be very specific - include model numbers if possible]
-רמת ביטחון: X%
-ניתוח טכני מפורט: [Specific observations relevant to this category]
-סימני אזהרה: [Any red flags you spotted]
-המלצות: [Only if additional verification needed]`
+❗ אל תאריך מעבר ל־5 משפטים. היה ברור ומדויק.`
       }
     ];
 
-    // Add conversation history
     if (conversationHistory && conversationHistory.length > 0) {
       messages.push(...conversationHistory);
     }
 
-    // Prepare current message with category-specific analysis
     const currentMessage = {
-      role: "user",
+      role: 'user',
       content: []
     };
 
-    // Create dynamic prompt based on any category hints in additional info
-    let textPrompt = "Analyze this luxury product for authenticity. First identify the category and brand, then perform detailed authentication analysis using category-specific criteria.";
-    
+    let textPrompt = 'Please analyze this product for authenticity. Identify category, brand and model if possible, then apply visual authentication techniques. Be assertive, clear, and summarize in no more than 5 short sentences.';
+
     if (additionalInfo && additionalInfo.trim()) {
-      const info = additionalInfo.toLowerCase();
-      
-      if (info.includes('שעון') || info.includes('watch') || info.includes('rolex') || info.includes('omega') || info.includes('hublot')) {
-        textPrompt += " FOCUS: This appears to be a watch. Examine dial details, hands, bezel, crown, bracelet, case proportions, and any visible movement parts.";
-      } else if (info.includes('תיק') || info.includes('bag') || info.includes('louis vuitton') || info.includes('chanel') || info.includes('hermes')) {
-        textPrompt += " FOCUS: This appears to be a handbag. Examine stitching patterns, material quality, logo embossing, hardware finish, and any date codes.";
-      } else if (info.includes('נעל') || info.includes('sneaker') || info.includes('nike') || info.includes('adidas') || info.includes('jordan')) {
-        textPrompt += " FOCUS: These appear to be sneakers. Examine stitching quality, sole patterns, tags, labels, colorway accuracy, and overall construction.";
-      } else if (info.includes('משקף') || info.includes('sunglasses') || info.includes('ray-ban') || info.includes('oakley')) {
-        textPrompt += " FOCUS: These appear to be sunglasses. Examine lens quality, frame construction, logo etching, and temple markings.";
-      } else if (info.includes('תכשיט') || info.includes('jewelry') || info.includes('tiffany') || info.includes('cartier')) {
-        textPrompt += " FOCUS: This appears to be jewelry. Examine hallmarks, clasp quality, stone settings, and overall craftsmanship.";
-      }
-      
-      textPrompt += ` Additional context provided: ${additionalInfo}`;
+      textPrompt += ` Additional product context: ${additionalInfo}`;
     }
 
     currentMessage.content.push({
-      type: "text",
+      type: 'text',
       text: textPrompt
     });
 
-    // Add images
     images.forEach(imageDataUrl => {
       currentMessage.content.push({
-        type: "image_url",
-        image_url: {
-          url: imageDataUrl
-        }
+        type: 'image_url',
+        image_url: { url: imageDataUrl }
       });
     });
 
     messages.push(currentMessage);
 
-    // Call OpenAI API
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -149,7 +109,7 @@ Answer format in Hebrew:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: "gpt-4o",
+        model: 'gpt-4o',
         messages: messages,
         max_tokens: 2000,
         temperature: 0.4
@@ -159,14 +119,10 @@ Answer format in Hebrew:
     if (!response.ok) {
       const errorData = await response.text();
       console.error('OpenAI API Error:', response.status, errorData);
-      
       return {
         statusCode: 500,
         headers,
-        body: JSON.stringify({ 
-          error: `שגיאה בשירות AI: ${response.status}`,
-          details: errorData
-        }),
+        body: JSON.stringify({ error: `שגיאה בשירות AI: ${response.status}`, details: errorData }),
       };
     }
 
@@ -179,23 +135,16 @@ Answer format in Hebrew:
       body: JSON.stringify({
         success: true,
         result: result,
-        conversationHistory: [...(conversationHistory || []), currentMessage, {
-          role: "assistant",
-          content: result
-        }]
+        conversationHistory: [...(conversationHistory || []), currentMessage, { role: 'assistant', content: result }]
       }),
     };
 
   } catch (error) {
     console.error('Function Error:', error);
-    
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({
-        error: 'שגיאה בעיבוד הבקשה',
-        details: error.message
-      }),
+      body: JSON.stringify({ error: 'שגיאה בעיבוד הבקשה', details: error.message }),
     };
   }
 };
