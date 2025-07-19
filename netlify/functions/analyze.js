@@ -1,150 +1,76 @@
-exports.handler = async (event, context) => {
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Content-Type': 'application/json',
-  };
+// analyze.js
 
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers, body: '' };
-  }
+const { OpenAI } = require("openai");
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers,
-      body: JSON.stringify({ error: 'Method not allowed' }),
-    };
-  }
-
+exports.handler = async function (event, context) {
   try {
-    const { images, additionalInfo, conversationHistory } = JSON.parse(event.body);
+    const body = JSON.parse(event.body || "{}");
+    const { images, productInfo } = body;
 
-    if (!images || images.length === 0) {
+    if (!images || !images.length || !productInfo) {
       return {
         statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'נא להעלות לפחות תמונה אחת' }),
+        body: JSON.stringify({ error: "Missing image or product information" })
       };
     }
 
-    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-    if (!OPENAI_API_KEY) {
-      return {
-        statusCode: 500,
-        headers,
-        body: JSON.stringify({ error: 'מפתח API לא מוגדר' }),
-      };
-    }
+    const prompt = `
+אתה מאמת מומחה למוצרי יוקרה (שעונים, תיקים, נעליים, תכשיטים, משקפיים וכו').
 
-    const messages = [
-      {
-        role: 'system',
-        content: `You are a luxury product authenticator. Your job is to analyze photos of suspected counterfeit products and determine their authenticity.
+הערך הבא הוא תמונה מקודדת בבייס64 של מוצר בקטגוריה: "${productInfo.category}".
 
-🚨 Treat each product as suspicious by default. Assume it is fake unless strong visual evidence proves otherwise.
+מידע נוסף על המוצר:
+מותג: ${productInfo.brand || "לא צוין"}
+דגם: ${productInfo.model || "לא צוין"}
 
-🔎 Actively look for flaws: inconsistent fonts, misaligned elements, cheap finishes, bad proportions, wrong logos, poor materials, etc.
+הנחיות:
+- התייחס רק למה שרואים בתמונה.
+- אל תאשר שהמוצר מקורי אלא אם יש ראיות ברורות: לוגו, מספר סידורי, איכות חריטה, סימני אותנטיות ייחודיים.
+- אם חסרים סימנים קריטיים, התוצאה צריכה להיות "לא ברור" או "מזויף" עם ביטחון נמוך מ-70%
+- אל תשתמש במילים כמו "נראה כמו" או "ייתכן ש". תהיה חד.
+- הסבר את הסיבות להחלטה שלך.
+- כתוב תשובה בעברית בלבד, לא יותר מ-5 משפטים.
 
-🧠 Instructions:
-- Identify the category: watch, bag, sneaker, etc.
-- Identify brand and model (if possible).
-- Use specific, category-based criteria (see below).
-- If critical parts (e.g., serial number, back case) are missing, lower confidence drastically.
-- Never say "authentic" unless there are multiple clear positive signs.
-
-🛑 If no flaws are visible, say: "לא נמצאו סימנים מובהקים לזיוף, אך לא ניתן לאשר מקוריות מלאה."
-
-✅ Categories:
-WATCHES: dial layout, hands, fonts, crown, cyclops magnification, bezel alignment, caseback, serial number
-BAGS: stitching, logo embossing, leather quality, interior lining, hardware codes
-SNEAKERS: logo accuracy, sole patterns, stitching quality, font weight on tags
-JEWELRY: engravings, clasp mechanism, polish, weight, symmetry
-
-📄 Respond in Hebrew using this format:
+החזר תשובה בפורמט הבא:
 מסקנה: מקורי / מזויף / לא ברור
-קטגוריה: [שעון / נעליים / תיק וכו']
-מותג ודגם: [אם ניתן]
+קטגוריה: 
+מותג ודגם: 
 רמת ביטחון: XX%
-סיכום קצר: עד 3–5 משפטים בהירים, חדים ומבוססי ניתוח
+סיכום קצר:
 
-📏 כל תגובה חייבת להיות החלטית. לא "נראה טוב" אלא מה כן ומה חסר.`
-      }
-    ];
+הנה התמונה:
+[IMAGE DATA HIDDEN FOR LENGTH]
+    `;
 
-    if (conversationHistory && conversationHistory.length > 0) {
-      messages.push(...conversationHistory);
-    }
-
-    const currentMessage = {
-      role: 'user',
-      content: []
-    };
-
-    let textPrompt = 'בדוק את התמונות המצורפות כאילו מדובר בזיוף מתוחכם. חפש פגמים, עיוותים, תקלות וחוסר התאמה לפרטים המקוריים. התייחס לכל פריט כאל חשוד עד שיוכח אחרת. דווח על רמת ביטחון קצרה וברורה.';
-
-    if (additionalInfo && additionalInfo.trim()) {
-      textPrompt += ` מידע נוסף שסופק: ${additionalInfo}`;
-    }
-
-    currentMessage.content.push({
-      type: 'text',
-      text: textPrompt
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4-vision-preview",
+      messages: [
+        {
+          role: "system",
+          content: "אתה מומחה לזיהוי זיופים של מוצרי יוקרה."
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: images[0] } }
+          ]
+        }
+      ],
+      max_tokens: 500
     });
 
-    images.forEach(imageDataUrl => {
-      currentMessage.content.push({
-        type: 'image_url',
-        image_url: { url: imageDataUrl }
-      });
-    });
-
-    messages.push(currentMessage);
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: messages,
-        max_tokens: 2000,
-        temperature: 0.3
-      })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error('OpenAI API Error:', response.status, errorData);
-      return {
-        statusCode: 500,
-        headers,
-        body: JSON.stringify({ error: `שגיאה בשירות AI: ${response.status}`, details: errorData }),
-      };
-    }
-
-    const data = await response.json();
-    const result = data.choices[0].message.content;
+    const result = completion.choices[0]?.message?.content || "לא התקבלה תשובה";
 
     return {
       statusCode: 200,
-      headers,
-      body: JSON.stringify({
-        success: true,
-        result: result,
-        conversationHistory: [...(conversationHistory || []), currentMessage, { role: 'assistant', content: result }]
-      }),
+      body: JSON.stringify({ success: true, result })
     };
-
-  } catch (error) {
-    console.error('Function Error:', error);
+  } catch (err) {
     return {
       statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: 'שגיאה בעיבוד הבקשה', details: error.message }),
+      body: JSON.stringify({ error: err.message })
     };
   }
 };
