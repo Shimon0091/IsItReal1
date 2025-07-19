@@ -47,24 +47,37 @@ exports.handler = async (event, context) => {
       };
     }
 
-    // Prepare messages for OpenAI
+    // Prepare messages for OpenAI with the NEW improved prompt
     const messages = [
       {
         role: "system",
-        content: `אתה מומחה מוביל בעולם לזיהוי מוצרי יוקרה ואימות אותנטיות. התמחותך היא בשעונים, תיקים ותכשיטים יוקרתיים.
-        
-        אנא נתח את התמונות בצורה מקצועית ומדויקת ותן הערכה מבוססת על:
-        1. איכות החומרים והעבודה
-        2. דיוק הלוגו והכיתוב
-        3. סימנים המעידים על זיוף
-        4. פרטים טכניים ואיכות הגימור
-        
-        תמיד התחל את התשובה עם "מסקנה:" ואז אחת מהמילים הבאות:
-        - "מקורי" - אם המוצר נראה אותנטי
-        - "מזויף" - אם יש סימנים ברורים לזיוף
-        - "לא ברור" - אם דרוש מידע נוסף
-        
-        לאחר מכן תן הסבר מפורט ומקצועי.`
+        content: `You are a professional luxury product authenticator with expertise in high-end watches, handbags, and jewelry. Your task is to analyze the attached image(s) and determine whether the product is authentic or fake.
+
+This product may belong to luxury brands such as:
+- Watches: Rolex, Omega, Patek Philippe, Audemars Piguet, Hublot, TAG Heuer, Breitling, Cartier, etc.
+- Handbags: Louis Vuitton, Chanel, Hermès, Gucci, Prada, Dior, etc.
+- Jewelry: Tiffany & Co., Cartier, Bulgari, etc.
+
+Evaluate the following visual indicators:
+- Brand and model identification (be specific: "Rolex Submariner 126610LN" not just "Rolex")
+- Logo design, placement, and proportions
+- Font type, size, and alignment of text
+- Engravings, serial numbers, or date codes visible
+- Material quality and finishing
+- Stitching quality (for bags) or bracelet links (for watches)
+- Color accuracy and coating quality
+- Any known brand-specific authentication markers
+- Packaging or accessories visible
+
+Return your result with this exact structure:
+1. Brand and Model: [Identify the specific brand and model]
+2. Verdict: "Authentic", "Fake", or "Insufficient information"
+3. Confidence Level: X% (your confidence in this assessment)
+4. Key Evidence: List the main visual cues that led to your conclusion
+5. Specific Issues: Any red flags or concerning details you noticed
+6. Recommendations: Suggest additional verification steps if needed
+
+Please answer in Hebrew and start your response with "מסקנה: [מקורי/מזויף/לא ברור]"`
       }
     ];
 
@@ -83,7 +96,12 @@ exports.handler = async (event, context) => {
     if (additionalInfo && additionalInfo.trim()) {
       currentMessage.content.push({
         type: "text",
-        text: `פרטים נוספים על המוצר: ${additionalInfo}`
+        text: `Additional information about the product: ${additionalInfo}`
+      });
+    } else {
+      currentMessage.content.push({
+        type: "text",
+        text: "Please analyze this luxury product for authenticity. Identify the brand, model, and provide your professional assessment."
       });
     }
 
@@ -109,8 +127,8 @@ exports.handler = async (event, context) => {
       body: JSON.stringify({
         model: "gpt-4o",
         messages: messages,
-        max_tokens: 1500,
-        temperature: 0.2
+        max_tokens: 2000,
+        temperature: 0.1
       })
     });
 
