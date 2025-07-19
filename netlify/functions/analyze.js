@@ -1,76 +1,130 @@
 // analyze.js
 
-const { OpenAI } = require("openai");
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const headers = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Content-Type': 'application/json'
+};
 
-exports.handler = async function (event, context) {
+exports.handler = async (event, context) => {
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers, body: '' };
+  }
+
+  if (event.httpMethod !== 'POST') {
+    return {
+      statusCode: 405,
+      headers,
+      body: JSON.stringify({ error: 'Method not allowed' })
+    };
+  }
+
   try {
-    const body = JSON.parse(event.body || "{}");
-    const { images, productInfo } = body;
+    const { images, productInfo, conversationHistory } = JSON.parse(event.body || '{}');
 
-    if (!images || !images.length || !productInfo) {
+    if (!images || images.length === 0 || !productInfo) {
       return {
         statusCode: 400,
-        body: JSON.stringify({ error: "Missing image or product information" })
+        headers,
+        body: JSON.stringify({ error: 'נא להעלות תמונה ולציין פרטי מוצר' })
       };
     }
 
-    const prompt = `
-אתה מאמת מומחה למוצרי יוקרה (שעונים, תיקים, נעליים, תכשיטים, משקפיים וכו').
+    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+    if (!OPENAI_API_KEY) {
+      return {
+        statusCode: 500,
+        headers,
+        body: JSON.stringify({ error: 'מפתח API לא מוגדר' })
+      };
+    }
 
-הערך הבא הוא תמונה מקודדת בבייס64 של מוצר בקטגוריה: "${productInfo.category}".
+    const messages = [
+      {
+        role: 'system',
+        content: `אתה מאמת מומחה למוצרי יוקרה. עבודתך היא לנתח תמונות ולזהות זיופים מתוחכמים.
 
-מידע נוסף על המוצר:
-מותג: ${productInfo.brand || "לא צוין"}
-דגם: ${productInfo.model || "לא צוין"}
+🔍 התייחס לכל מוצר כאל חשוד עד שיוכח אחרת.
 
-הנחיות:
-- התייחס רק למה שרואים בתמונה.
-- אל תאשר שהמוצר מקורי אלא אם יש ראיות ברורות: לוגו, מספר סידורי, איכות חריטה, סימני אותנטיות ייחודיים.
-- אם חסרים סימנים קריטיים, התוצאה צריכה להיות "לא ברור" או "מזויף" עם ביטחון נמוך מ-70%
-- אל תשתמש במילים כמו "נראה כמו" או "ייתכן ש". תהיה חד.
-- הסבר את הסיבות להחלטה שלך.
-- כתוב תשובה בעברית בלבד, לא יותר מ-5 משפטים.
+🧠 הנחיות:
+- קטגוריה: ${productInfo.category || 'לא צוין'}
+- מותג: ${productInfo.brand || 'לא צוין'}
+- דגם: ${productInfo.model || 'לא צוין'}
 
-החזר תשובה בפורמט הבא:
+- לעולם אל תצהיר שמוצר הוא מקורי אלא אם רואים לפחות 3 סימנים מובהקים: לוגו מדויק, סידורי, גימור, מנגנון.
+- אם יש חוסר פרטים – דרג ביטחון מתחת ל־70%.
+- נתח לפי קטגוריה (שעון: בזל, מחוגים, כתרים / תיק: תפירה, לוגו, רוכסן וכו')
+- חפש: הדפס לא מדויק, יישור שגוי, גימור זול, פרופורציות לא טובות.
+
+📄 תשובה בעברית בלבד, בפורמט:
 מסקנה: מקורי / מזויף / לא ברור
 קטגוריה: 
 מותג ודגם: 
 רמת ביטחון: XX%
-סיכום קצר:
+סיכום קצר: 3–5 משפטים.`
+      }
+    ];
 
-הנה התמונה:
-[IMAGE DATA HIDDEN FOR LENGTH]
-    `;
+    if (conversationHistory && Array.isArray(conversationHistory)) {
+      messages.push(...conversationHistory);
+    }
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4-vision-preview",
-      messages: [
+    const currentMessage = {
+      role: 'user',
+      content: [
         {
-          role: "system",
-          content: "אתה מומחה לזיהוי זיופים של מוצרי יוקרה."
+          type: 'text',
+          text: 'בדוק את התמונות המצורפות כאילו מדובר בזיוף מתוחכם. נתח לפי הקטגוריה הרלוונטית.'
         },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            { type: "image_url", image_url: { url: images[0] } }
-          ]
-        }
-      ],
-      max_tokens: 500
+        ...images.map(img => ({ type: 'image_url', image_url: { url: img } }))
+      ]
+    };
+
+    messages.push(currentMessage);
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: messages,
+        max_tokens: 2000,
+        temperature: 0.3
+      })
     });
 
-    const result = completion.choices[0]?.message?.content || "לא התקבלה תשובה";
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('OpenAI Error:', response.status, errorText);
+      return {
+        statusCode: 500,
+        headers,
+        body: JSON.stringify({ error: 'שגיאה מהשרת החכם', details: errorText })
+      };
+    }
+
+    const data = await response.json();
+    const result = data.choices[0]?.message?.content || 'לא התקבלה תשובה';
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ success: true, result })
+      headers,
+      body: JSON.stringify({
+        success: true,
+        result,
+        conversationHistory: [...(conversationHistory || []), currentMessage, { role: 'assistant', content: result }]
+      })
     };
-  } catch (err) {
+  } catch (error) {
+    console.error('Function Error:', error);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: err.message })
+      headers,
+      body: JSON.stringify({ error: 'שגיאה בעיבוד הבקשה', details: error.message })
     };
   }
 };
