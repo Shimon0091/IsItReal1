@@ -664,11 +664,12 @@
         const fileInput = document.getElementById('fileInput');
         const imagesPreview = document.getElementById('imagesPreview');
 
+        // Simple click handler - no conditions
         uploadArea.addEventListener('click', (e) => {
-            // Only trigger if not clicking on existing images
-            if (e.target === uploadArea || e.target.closest('.upload-icon, .upload-text, .upload-subtext, .btn')) {
-                fileInput.click();
-            }
+            // Prevent double trigger
+            e.preventDefault();
+            e.stopPropagation();
+            fileInput.click();
         });
 
         uploadArea.addEventListener('dragover', (e) => {
@@ -692,8 +693,6 @@
             if (files.length > 0) {
                 handleFiles(files);
             }
-            // Reset the file input to prevent double trigger
-            e.target.value = '';
         });
 
         function handleFiles(files) {
@@ -711,9 +710,6 @@
                 };
                 reader.readAsDataURL(file);
             });
-            
-            // Clear the file input completely
-            fileInput.value = '';
         }
 
         function updateImagesPreview() {
